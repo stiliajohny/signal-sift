@@ -1,0 +1,164 @@
+name: signal-sift
+
+x-backend: &backend
+  build: .
+  image: signal-sift:local
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql://app:${POSTGRES_PASSWORD:?Run scripts/init_env.py first}@postgres:5432/alert_insight
+    GRAFANA_READ_ROLE: grafana_reader
+  volumes:
+    - ./config:/app/config:ro
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    environment:
+      POSTGRES_DB: alert_insight
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?Set GRAFANA_DB_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./deploy/postgres-init.sh:/docker-entrypoint-initdb.d/10-grafana.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U app -d alert_insight']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  configure:
+    <<: *backend
+    user: '0:0'
+    command: [python, -m, alert_insight.provision]
+    volumes:
+      - monitoring-config:/generated
+
+  migrate:
+    <<: *backend
+    command: [python, -m, alert_insight.storage]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  api:
+    <<: *backend
+    ports: ['127.0.0.1:${API_PORT:-8000}:8000']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  worker:
+    <<: *backend
+    command: [python, -m, alert_insight.worker]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  simulator:
+    build: .
+    image: signal-sift:local
+    command: [python, -m, alert_insight.demo]
+    ports: ['127.0.0.1:${SIMULATOR_PORT:-9100}:9100']
+    restart: unless-stopped
+
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.2}
+    profiles: [local-model]
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_NO_CLOUD: '1'
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      OLLAMA_CONTEXT_LENGTH: ${MODEL_CONTEXT_TOKENS:-16384}
+    volumes:
+      - ollama-data:/root/.ollama
+    ports: ['127.0.0.1:${OLLAMA_PORT:-11434}:11434']
+    healthcheck:
+      test: [CMD, ollama, list]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  model-pull:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.2}
+    profiles: [local-model]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_NO_CLOUD: '1'
+    command: [pull, '${MODEL_NAME:-qwen3:1.7b}']
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: on-failure
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.5.0}
+    command: ['--config.file=/etc/prometheus/generated/prometheus.yml', '--storage.tsdb.path=/prometheus', '--storage.tsdb.retention.time=7d']
+    volumes:
+      - monitoring-config:/etc/prometheus/generated:ro
+      - prometheus-data:/prometheus
+    ports: ['127.0.0.1:${PROMETHEUS_PORT:-9090}:9090']
+    depends_on:
+      configure:
+        condition: service_completed_successfully
+      simulator:
+        condition: service_started
+    restart: unless-stopped
+
+  alertmanager:
+    image: ${ALERTMANAGER_IMAGE:-prom/alertmanager:v0.28.1}
+    command: ['--config.file=/etc/alertmanager/generated/alertmanager.yml', '--storage.path=/alertmanager']
+    volumes:
+      - monitoring-config:/etc/alertmanager/generated:ro
+      - alertmanager-data:/alertmanager
+    ports: ['127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093']
+    depends_on:
+      configure:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  grafana:
+    image: ${GRAFANA_IMAGE:-grafana/grafana:12.2.0}
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GRAFANA_DB_HOST: postgres:5432
+      GRAFANA_DB_NAME: alert_insight
+      GRAFANA_DB_USER: grafana_reader
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?Set GRAFANA_DB_PASSWORD}
+      GRAFANA_DB_SSLMODE: disable
+      GRAFANA_METRICS_URL: ${GRAFANA_METRICS_URL:-http://prometheus:9090}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ['127.0.0.1:${GRAFANA_PORT:-3000}:3000']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  monitoring-config:
+  prometheus-data:
+  alertmanager-data:
+  grafana-data:
+  ollama-data:

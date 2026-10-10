@@ -1,0 +1,440 @@
+{
+  "uid": "signal-sift-overview",
+  "title": "SignalSift \u2014 incidents and rule reviews",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "signal-sift",
+    "advisory"
+  ],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Scope and interpretation",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Advisory analysis.** `demo` means simulated observability inputs. The default model is real local Ollama inference; the optional simulator model is a deterministic fixture. Original alert severity and AI priority are separate. Pending/unknown means insufficient analysis, not healthy. Webhook deliveries are not confirmed pages. Dedicated Kubernetes/deployment collectors and rule replay are extension points."
+      }
+    },
+    {
+      "id": 2,
+      "title": "Open incidents",
+      "type": "stat",
+      "datasource": {
+        "type": "postgres",
+        "uid": "incident-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 6,
+        "h": 3
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "incident-postgres"
+          },
+          "rawSql": "SELECT COUNT(*) AS value FROM grafana_incidents WHERE state='open'",
+          "rawQuery": true,
+          "format": "table"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Recommended urgent",
+      "type": "stat",
+      "datasource": {
+        "type": "postgres",
+        "uid": "incident-postgres"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 3,
+        "w": 6,
+        "h": 3
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "incident-postgres"
+          },
+          "rawSql": "SELECT COUNT(*) AS value FROM grafana_incidents WHERE priority='urgent' AND state='open'",
+          "rawQuery": true,
+          "format": "table"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Pending / unknown",
+      "type": "stat",
+      "datasource": {
+        "type": "postgres",
+        "uid": "incident-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 3,
+        "w": 6,
+        "h": 3
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "incident-postgres"
+          },
+          "rawSql": "SELECT COUNT(*) AS value FROM grafana_incidents WHERE priority IN ('pending','unknown')",
+          "rawQuery": true,
+          "format": "table"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Failed investigations",
+      "type": "stat",
+      "datasource": {
+        "type": "postgres",
+        "uid": "incident-postgres"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 3,
+        "w": 6,
+        "h": 3
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "incident-postgres"
+          },
+          "rawSql": "SELECT COUNT(*) AS value FROM grafana_incidents WHERE job_state='failed'",
+          "rawQuery": true,
+          "format": "table"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Incident triage \u2014 original severity and recommended priority",
+      "type": "table",
+      "datasource": {
+        "type": "postgres",
+        "uid": "incident-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "incident-postgres"
+          },
+          "rawSql": "SELECT id, to_timestamp(first_seen) AS started, service, environment, workload, state, original_severities, priority, summary, model_name, analysis_mode, job_state, error_code FROM grafana_incidents WHERE first_seen <= $__unixEpochTo() AND (last_seen >= $__unixEpochFrom() OR state='open') ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'investigate' THEN 1 WHEN 'unknown' THEN 2 ELSE 3 END, last_seen DESC LIMIT 200",
+          "rawQuery": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "AI explanation and missing-evidence guidance",
+      "type": "table",
+      "datasource": {
+        "type": "postgres",
+        "uid": "incident-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "incident-postgres"
+          },
+          "rawSql": "SELECT service, workload, priority, explanation, model_name, analysis_mode FROM grafana_incidents WHERE first_seen <= $__unixEpochTo() AND (last_seen >= $__unixEpochFrom() OR state='open') ORDER BY last_seen DESC LIMIT 50",
+          "rawQuery": true,
+          "format": "table"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Alert episodes (each row is an occurrence)",
+      "type": "state-timeline",
+      "datasource": {
+        "type": "postgres",
+        "uid": "incident-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "incident-postgres"
+          },
+          "rawSql": "SELECT to_timestamp(starts_at) AS time, to_timestamp(COALESCE(ends_at, EXTRACT(EPOCH FROM now()))) AS timeend, service || ' / ' || alertname || ' / ' || LEFT(id,8) AS entity, CASE WHEN ends_at IS NULL THEN 'firing' ELSE 'fired (resolved)' END AS state FROM grafana_episodes WHERE starts_at <= $__unixEpochTo() AND COALESCE(ends_at, EXTRACT(EPOCH FROM now())) >= $__unixEpochFrom() ORDER BY starts_at LIMIT 100",
+          "rawQuery": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "mergeValues": true,
+        "showValue": "auto",
+        "rowHeight": 0.8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "partitionByValues",
+          "options": {
+            "fields": [
+              "entity"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Recorded alert episodes by rule",
+      "type": "timeseries",
+      "datasource": {
+        "type": "postgres",
+        "uid": "incident-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "incident-postgres"
+          },
+          "rawSql": "SELECT $__timeGroupAlias(to_timestamp(starts_at),'5m'), COUNT(*) AS value, alertname AS metric FROM grafana_episodes WHERE $__timeFilter(to_timestamp(starts_at)) GROUP BY 1,3 ORDER BY 1",
+          "rawQuery": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "title": "Analysis-webhook deliveries (not pages)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "postgres",
+        "uid": "incident-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "incident-postgres"
+          },
+          "rawSql": "SELECT $__timeGroupAlias(to_timestamp(received_at),'5m'), COUNT(*) AS value FROM grafana_delivery_stats WHERE $__timeFilter(to_timestamp(received_at)) GROUP BY 1 ORDER BY 1",
+          "rawQuery": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "title": "Replica health \u2014 annotated incidents",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "monitoring-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "demo_workload_available_replicas",
+          "legendFormat": "available {{service}}"
+        },
+        {
+          "refId": "B",
+          "expr": "demo_workload_desired_replicas",
+          "legendFormat": "desired {{service}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Request errors \u2014 annotated incidents",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "monitoring-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 39,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(demo_request_errors_total[2m])",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Scheduled review candidates (no rule changes applied)",
+      "type": "table",
+      "datasource": {
+        "type": "postgres",
+        "uid": "incident-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "incident-postgres"
+          },
+          "rawSql": "SELECT to_timestamp(created_at) AS time, mode, report FROM grafana_reviews WHERE $__timeFilter(to_timestamp(created_at)) ORDER BY created_at DESC LIMIT 10",
+          "rawQuery": true,
+          "format": "table"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "name": "Incident evidence",
+        "enable": true,
+        "hide": false,
+        "iconColor": "#ff9830",
+        "datasource": {
+          "type": "postgres",
+          "uid": "incident-postgres"
+        },
+        "target": {
+          "refId": "Anno",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_timestamp(first_seen) AS time, to_timestamp(CASE WHEN state='open' THEN EXTRACT(EPOCH FROM now()) ELSE last_seen END) AS timeend, service || ': ' || COALESCE(NULLIF(summary,''),state) AS text, service || ',' || environment || ',' || priority AS tags FROM grafana_incidents WHERE first_seen <= $__unixEpochTo() AND (last_seen >= $__unixEpochFrom() OR state='open')"
+        }
+      }
+    ]
+  }
+}

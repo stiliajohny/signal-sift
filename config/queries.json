@@ -1,0 +1,6 @@
+{
+  "available_replicas": "demo_workload_available_replicas[[selector]]",
+  "desired_replicas": "demo_workload_desired_replicas[[selector]]",
+  "error_rate": "rate(demo_request_errors_total[[selector]][2m])",
+  "alert_states": "ALERTS[[alert_selector]]"
+}

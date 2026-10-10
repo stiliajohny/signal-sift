@@ -1,0 +1,27 @@
+apiVersion: 1
+datasources:
+  - name: Incident history (Postgres)
+    uid: incident-postgres
+    type: postgres
+    access: proxy
+    url: $GRAFANA_DB_HOST
+    user: $GRAFANA_DB_USER
+    editable: false
+    jsonData:
+      database: $GRAFANA_DB_NAME
+      sslmode: $GRAFANA_DB_SSLMODE
+      postgresVersion: 1700
+      maxOpenConns: 5
+    secureJsonData:
+      password: $GRAFANA_DB_PASSWORD
+  - name: Metrics (Prometheus / VictoriaMetrics)
+    uid: monitoring-metrics
+    type: prometheus
+    access: proxy
+    url: $GRAFANA_METRICS_URL
+    editable: false
+    jsonData:
+      httpMethod: POST
+      httpHeaderName1: Authorization
+    secureJsonData:
+      httpHeaderValue1: Bearer $METRICS_TOKEN
